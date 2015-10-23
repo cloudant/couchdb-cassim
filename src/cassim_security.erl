@@ -38,9 +38,7 @@ get_security(DbName) ->
     get_security(DbName, [?ADMIN_CTX]).
 
 
-get_security(#db{name=DbName}, Options) ->
-    get_security(DbName, Options);
-get_security(DbName, Options) ->
+get_security(DbName, Options) when is_binary(DbName) ->
     case cassim:is_active() of
         true ->
             UserCtx = couch_util:get_value(user_ctx, Options, #user_ctx{}),
@@ -50,7 +48,9 @@ get_security(DbName, Options) ->
             {proplists:delete(<<"_id">>, SecProps)};
         false ->
             fabric:get_security(DbName, Options)
-    end.
+    end;
+get_security(Db, Options) ->
+    get_security(couch_db:name(Db), Options).
 
 
 get_security_doc(DbName) when is_binary(DbName) ->
@@ -90,20 +90,23 @@ set_security(DbName, SecProps) ->
     set_security(DbName, SecProps, [?ADMIN_CTX]).
 
 
-set_security(#db{name=DbName0}, #doc{}=SecDoc0, Options) ->
+set_security(DbName0, #doc{}=SecDoc0, Options) when is_binary(DbName0) ->
     DbName = mem3:dbname(DbName0),
     MetaId = cassim_metadata_cache:security_meta_id(DbName),
     SecDoc = SecDoc0#doc{id=MetaId},
     UserCtx = couch_util:get_value(user_ctx, Options, #user_ctx{}),
     MetaDbName = cassim_metadata_cache:metadata_db(),
-    MetaDb = #db{name=MetaDbName, user_ctx=?ADMIN_USER},
+    MetaOptions = [{clustered, true}, {user_ctx, ?ADMIN_USER}],
+    MetaDb = couch_db:open(MetaDbName, MetaOptions),
     cassim:verify_admin_role(UserCtx),
     ok = validate_security_doc(SecDoc),
     {Status, Etag, {Body0}} =
         chttpd_db:update_doc(MetaDb, MetaId, SecDoc, Options),
     Body = {proplists:delete(<<"_id">>, Body0)},
     ok = cassim_metadata_cache:cleanup_old_docs(MetaId),
-    {Status, Etag, Body}.
+    {Status, Etag, Body};
+set_security(Db, Doc, Options) ->
+    set_security(couch_db:name(Db), Doc, Options).
 
 
 migrate_security_props(DbName0, {SecProps}) ->
@@ -111,7 +114,8 @@ migrate_security_props(DbName0, {SecProps}) ->
     MetaId = cassim_metadata_cache:security_meta_id(DbName),
     SecDoc = #doc{id=MetaId, body={SecProps}},
     MetaDbName = cassim_metadata_cache:metadata_db(),
-    MetaDb = #db{name=MetaDbName, user_ctx=?ADMIN_USER},
+    MetaOptions = [{clustered, true}, {user_ctx, ?ADMIN_USER}],
+    MetaDb = couch_db:open(MetaDbName, MetaOptions),
     %% Better way to construct a new #doc{} with the rev?
     {_, _, {Body}} = chttpd_db:update_doc(MetaDb, MetaId, SecDoc, [?ADMIN_CTX]),
     Rev = proplists:get_value(rev, Body),
