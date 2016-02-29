@@ -59,7 +59,7 @@ metadata_db_exists() ->
 
 
 verify_is_admin(#httpd{}=Req) ->
-    chttpd:verify_is_server_admin(Req).
+    couch_httpd:verify_is_server_admin(Req).
 
 
 is_server_admin(#httpd{user_ctx=#user_ctx{roles=Roles}}) ->
